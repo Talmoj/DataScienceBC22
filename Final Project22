@@ -1,0 +1,126 @@
+from pandas.core.ops import fill_binop
+import pandas as pd
+import numpy as np
+import scipy as sp
+import matplotlib.pyplot as plt
+from google.colab import data_table
+from plotnine import *
+import seaborn as sns
+from statsmodels.graphics.mosaicplot import mosaic
+
+
+db = "/content/gnomAD_v2.1.1_ENSG00000008710_2022_10_12_19_21_33.xlsx"
+df = pd.read_excel(db)
+data_table.enable_dataframe_formatter()
+del df['Chromosome']
+data_table.DataTable(df)
+
+##### Data Types & Statistical Metrics:
+
+df.shape[0]
+df.describe(include="all")
+print(df.dtypes)
+df.head()
+
+##### Data Coverage & Drop Record
+#df.dropna()       ## running this line will produce an error because one of the columns with NaN is used in plotting 
+dfc = df.iloc[1:8646, 2:18]
+dfra = df.iloc[1:8646, 2:4]
+dfc.fillna("Not Specified")
+dfc.drop(['Source','Transcript', 'Transcript Consequence','HGVS Consequence', 'Filters - exomes', 'Filters - genomes', 'ClinVar Variation ID','Flags', 'Allele Number'], axis = 1, inplace = True)
+print(dfc.columns.values)
+
+del dfc['Protein Consequence']
+
+##### Saving:
+
+dfc.to_excel("PKD1.xlsx", sheet_name = "gNOMAD1", index = True)
+
+###### Handle Missing Value , Data Formatting, Header Dataset (Drop Attributes):
+
+#dfc.dropna(axis = 1 ,inplace = True)  ## running this line will produce an error because one of the columns with NaN is used in plotting
+dfc.isna()
+print(dfc.dtypes)
+
+# Explination: The minor allele frequency (MAF) cut-off of 0.001, which is recommended for a dominant disease variant discovery in Mendelian diseases [30], was used to classify variants as rare (MAF < 0.001), frequency that supports variant's pathogenic effect, and common (MAF ≥ 0.001)
+
+dfc.loc[df['Allele Frequency'] > (0.001), 'Allele Frequency'] = "Common"
+dfc.loc[df['Allele Frequency'] < (0.001), 'Allele Frequency'] = 'Rare'
+
+print(dfc.dtypes)
+
+
+dfc.loc[df['VEP Annotation'] == "3_prime_UTR_variant", 'VEP Annotation'] = "3'"
+dfc.loc[df['VEP Annotation'] == "missense_variant", 'VEP Annotation'] = "MS"
+dfc.loc[df['VEP Annotation'] == "synonymous_variant", 'VEP Annotation'] = "SY"
+dfc.loc[df['VEP Annotation'] == "frameshift_variant", 'VEP Annotation'] = "FS"
+dfc.loc[df['VEP Annotation'] == "splice_region_variant", 'VEP Annotation'] = "SP"
+dfc.loc[df['VEP Annotation'] == "intron_variant", 'VEP Annotation'] = "INT"
+dfc.loc[df['VEP Annotation'] == "5_prime_UTR_variant", 'VEP Annotation'] = "5'"
+dfc.loc[df['VEP Annotation'] == "stop_gained", 'VEP Annotation'] = "STOP"
+dfc.loc[df['VEP Annotation'] == "splice_acceptor_variant", 'VEP Annotation'] = "SPA"
+dfc.loc[df['VEP Annotation'] == "splice_donor_variant", 'VEP Annotation'] = "SPD"
+dfc.loc[df['VEP Annotation'] == "inframe_insertion", 'VEP Annotation'] = "INFI"
+dfc.loc[df['VEP Annotation'] == "inframe_deletion", 'VEP Annotation'] = "INFD"
+
+
+##### Descriptive Statistics: 
+df["Allele Frequency"].describe()
+df["VEP Annotation"].describe()
+
+##### Grouping Data:
+
+dfc.groupby(['Reference', 'Alternate', 'VEP Annotation', "Allele Frequency", 'ClinVar Clinical Significance']).mean()
+#dfc.isna()
+dfc.fillna("Not Specified")
+VEP = dfc['VEP Annotation']
+
+##### Data Binning
+
+bins = np.linspace(1, 5, 2)
+labels = ['Rare', 'Common']
+dfc['bins'] = pd.Categorical(dfc["Allele Frequency"])
+
+dfcb = dfc['bins']
+print(dfcb)
+#print(df.dtypes)
+
+
+dfra['Reference']=dfra['Reference'].astype('category').cat.codes
+dfra['Alternate']=dfra['Alternate'].astype('category').cat.codes
+
+### NOTE: PLEASE RUN EACH PLOT SEPERETLY TO VIEW PROPERLY 
+
+##### Figure 1 - Bar Count Plot:
+# Explination: Because the Dataset doesn't have contious scale of time or numerical values, line plots were not the best represntation of certain attributes. 
+
+
+plt.figure(figsize=(16,10))
+f1 = sns.countplot(data=dfc, y= 'VEP Annotation' , palette ='rainbow', hue = "ClinVar Clinical Significance")
+f1.set(ylabel= "Variant Effect Pridictor")
+plt.title("Allele Frequency of Variant Effect Pridictors in PKD1 gene")
+
+###### Figure 2 -- Using ggplot (point):
+
+ggplot(dfc, aes(x='VEP Annotation', y='Allele Frequency', color = "ClinVar Clinical Significance")) + geom_point()
+
+
+##### Figue 3 - Pie chart
+
+dfc.loc[df["ClinVar Clinical Significance"] == "not provided", "ClinVar Clinical Significance"] = "Uncertain significance"
+dfc.loc[df["ClinVar Clinical Significance"] == "other", "ClinVar Clinical Significance"] = "Uncertain significance"
+dfc.loc[df["ClinVar Clinical Significance"] == "Uncertain significance; other", "ClinVar Clinical Significance"] = "Uncertain significance"
+
+
+dfc["ClinVar Clinical Significance"].str.get_dummies().sum().plot.pie(label='', autopct='%1.0f%%',fontsize=10, subplots='true', startangle = 90, figsize=(15,15))
+plt.axis('equal')
+plt.legend(loc="best")
+plt.tight_layout()
+plt.show()
+
+
+##### Figure 4 - Using Folium Library is for gespatial mapping, since dataset isn't applicabile I decided to make a Co-occurrence matrix for two attributes. 
+
+co_mat = pd.crosstab(dfc['Reference'], dfc["Alternate"])
+plt.subplots(figsize=(20,15))
+sns.heatmap(co_mat)
